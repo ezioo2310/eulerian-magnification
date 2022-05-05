@@ -1,6 +1,7 @@
 import numpy as np
 import scipy
-
+import scipy.signal as signal
+import matplotlib.pyplot as plt
 
 def uint8_to_float(img):
     result = np.ndarray(shape=img.shape, dtype='float')
@@ -34,3 +35,29 @@ def temporal_bandpass_filter(data, fps, freq_min=0.833, freq_max=1, axis=0, ampl
     result[:] = scipy.fftpack.ifft(fft, axis=0)
     result *= amplification_factor
     return result
+
+def butter_bandpass_filter(data, fps, freq_min=0.833, freq_max=1, amplification_factor=1, order=5):
+    omega = 0.5 * fps
+    low = freq_min / omega
+    high = freq_max / omega
+    b, a = signal.butter(order, [low, high], btype='band')
+    y = signal.lfilter(b, a, data, axis=0)
+    y *= amplification_factor
+    return y
+
+def plot_butter_filter(fps, freq_min, freq_max, order):
+    omega = 0.5 * fps
+    low = freq_min / omega
+    high = freq_max / omega
+    b, a = signal.butter(order, [low, high], btype='band')
+    w, h = signal.freqz(b, a, fs=fps)
+    plt.plot(w, abs(h), label="order = %d" % order)
+    
+def plot_orders_butter(fps, freq_min, freq_max):
+    for order in [3,5,7]:
+        plot_butter_filter(fps, freq_min, freq_max, order)
+    plt.xlabel('Frequency (Hz)')
+    plt.ylabel('Gain')
+    plt.grid(True)
+    plt.legend(loc='best')    
+    plt.show()
