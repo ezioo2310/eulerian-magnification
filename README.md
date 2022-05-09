@@ -29,7 +29,7 @@ version of numpy as the scipy binary depends on it.
 This technique works best with videos that have very little motion. Pre-processing a video through a stabilization
 algorithm may help.  Some excellent videos sources can be found here: http://people.csail.mit.edu/mrub/vidmag/
 
-Once you've downloaded the video simply run::
+Once you've downloaded the video simply run the first version of Linear EVM which performs poorly::
 
     import eulerian_magnification as em
 
@@ -40,9 +40,18 @@ Once you've downloaded the video simply run::
             amplification=50,
             pyramid_levels=3
     )
-
-
 `freq_min` and `freq_max` specify the frequency in hertz that will be amplified. `amplification` specifies how much that signal will be amplified.
+
+OR the second version of Linear EVM which is better:
+
+    #Go inside the evm.py script, change the parameters of the __main__ block
+    #and from the command line, run
+    
+    python evm.py
+
+
+`low` and `high` specify the corresponding frequencies. `filt` specifies which temporal filter to use (choices are 'ideal' and 'butter'). `level` specificies the number of levels in the pyramid and `amplification` the amount of amplification of the frequency band determined by `low` and `high`. `rgb` determines wheteher we use RGB images or not. `custom` specifies whether we would like to use custom video loading; we use this depending on if we would like to use cropped video sequence; if we want to use it, we have to manually set the pixel range that determines the cut image.
+
 
 It can take a while to find the best parameters for a specific video. To help with that there is the show_frequencies
 function::

@@ -44,22 +44,53 @@ def build_laplacian_pyramid(src,levels=3):
     return pyramid
 
 #load video from file
-def load_video(video_filename):
+def load_video(video_filename, custom = False):
     cap=cv2.VideoCapture(video_filename)
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = int(cap.get(cv2.CAP_PROP_FPS))
-    video_tensor=np.zeros((frame_count,height,width,3),dtype='float')
+    if custom:
+        video_tensor=np.zeros((frame_count,500,500,3),dtype='float') #choose the number insted of 500
+    else:   
+        video_tensor=np.zeros((frame_count,height,width,3),dtype='float')
     x=0
     while cap.isOpened():
         ret,frame=cap.read()
         if ret is True:
-            video_tensor[x]=frame
+            if custom:
+                video_tensor[x]=frame[:,:,:] #set the first and second range of pixels
+            else:
+                video_tensor[x]=frame
             x+=1
         else:
             break
     return video_tensor,fps
-
+def load_video_gray(video_filename, custom = False):
+    cap=cv2.VideoCapture(video_filename)
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    if custom:
+        video_tensor=np.zeros((frame_count, 600, 920),dtype='int') #the numbers were chosen manually based
+    # on the box within an image we would like to look at. The reason is that sometimes we do not have
+    # enough memory to load the whole full sequency in the original resolution
+    else:
+        video_tensor=np.zeros((frame_count, height, width),dtype='int')
+    x=0
+    while cap.isOpened():
+        ret,frame=cap.read()
+        if ret is True:
+            if custom:
+                video_tensor[x]=cv2.cvtColor(frame[480:,1000:,:], cv2.COLOR_BGR2GRAY) #1080 - 480 = 620 
+            # and 1920 - 1000 = 920
+            else:
+                video_tensor[x]=cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            x+=1
+        else:
+            break
+    result = np.ndarray(shape=video_tensor.shape, dtype=np.float32)
+    result[:] = video_tensor
+    return result,fps
 # apply temporal ideal bandpass filter to gaussian video
 def temporal_ideal_filter(tensor,low,high,fps,axis=0):
     fft=fftpack.fft(tensor,axis=axis)
@@ -99,10 +130,11 @@ def reconstract_video(amp_video,origin_video,levels=3):
     return final_video
 
 #save video to files
-def save_video(video_tensor, name='out.avi'):
+def save_video(video_tensor, name='out.avi', fps=30, RGB=True):
     fourcc = cv2.VideoWriter_fourcc('M','J','P','G')
     [height,width]=video_tensor[0].shape[0:2]
-    writer = cv2.VideoWriter('./video_results/'+name, fourcc, 30, (width, height), 1)
+    num = 0 if RGB is False else 1 
+    writer = cv2.VideoWriter('./video_results/'+name, fourcc, fps, (width, height), num)
     for i in range(0,video_tensor.shape[0]):
         writer.write(cv2.convertScaleAbs(video_tensor[i]))
     writer.release()
@@ -124,7 +156,8 @@ def laplacian_video(video_tensor,levels=3):
         pyr=build_laplacian_pyramid(frame,levels=levels)
         if i==0:
             for k in range(levels):
-                tensor_list.append(np.zeros((video_tensor.shape[0],pyr[k].shape[0],pyr[k].shape[1],3)))
+                #tensor_list.append(np.zeros((video_tensor.shape[0],pyr[k].shape[0],pyr[k].shape[1],3)))
+                tensor_list.append(np.zeros((video_tensor.shape[0],pyr[k].shape[0],pyr[k].shape[1])))
         for n in range(levels):
             tensor_list[n][i] = pyr[n]
     return tensor_list
@@ -149,24 +182,29 @@ def reconstract_from_tensorlist(filter_tensor_list,levels=3):
     return final
 
 #manify motion
-def magnify_motion(video_name,low,high,filt = 'butter',levels=3,amplification=10):
-    t,f=load_video(video_name)
+def magnify_motion(video_name,low,high,filt = 'butter',levels=3,amplification=20, rgb = False, custom = False):
+    if rgb:
+        t,f=load_video(video_name, custom = custom)
+    else:
+        t,f=load_video_gray(video_name, custom = custom) #if custom is True, we have to manually change the parameters 
+        #  of the cropped part of the image within the function
     lap_video_list=laplacian_video(t,levels=levels)
     filter_tensor_list=[]
     for i in range(levels):
         if filt == 'butter':
             filter_tensor=butter_bandpass_filter(lap_video_list[i],low,high,f)
-        elif filt == 'temporal':
+        elif filt == 'ideal':
             filter_tensor=temporal_ideal_filter(lap_video_list[i],low,high,f)
         else:
             raise Exception('If you want to use that filter, YOU code it!')
         filter_tensor*=amplification
         filter_tensor_list.append(filter_tensor)
-    recon=reconstract_from_tensorlist(filter_tensor_list)
+    recon=reconstract_from_tensorlist(filter_tensor_list, levels=levels)
     final=t+recon
     name = video_name.split('.')[0] + f'{low}-{high}Hz_{levels}Lvl_{amplification}Amp_{filt}Filter.avi'
-    save_video(final, name)
+    save_video(final, name, fps = f, RGB = rgb)
 
 if __name__=="__main__":
-    # magnify_color("baby.mp4",0.4,3)
-    magnify_motion("baby.mp4",0.4,3)
+    #magnify_color("baby.mp4",0.4,3)
+    magnify_motion("auto.mov", 10, 20, filt = 'butter', levels=2, amplification=50, rgb = False, custom = True)
+
