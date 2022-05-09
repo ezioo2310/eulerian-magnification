@@ -67,8 +67,8 @@ This will show a graph of the average value of the video as well as a graph of t
 frequencies.
 
 ## Todo
- - Butterworth and IIR filters
- - Optimized memory usage to allow processing of larger files
+ - IIR filters
+ - Optimized memory usage to allow processing of larger files (semi solved for now; C++ is better for tackling)
 
 ## Troubleshooting
 
