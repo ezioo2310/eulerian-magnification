@@ -44,53 +44,25 @@ def build_laplacian_pyramid(src,levels=3):
     return pyramid
 
 #load video from file
-def load_video(video_filename, custom = False):
+def load_video(video_filename, RGB = True):
     cap=cv2.VideoCapture(video_filename)
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = int(cap.get(cv2.CAP_PROP_FPS))
-    if custom:
-        video_tensor=np.zeros((frame_count,500,500,3),dtype='float') #choose the number insted of 500
-    else:   
-        video_tensor=np.zeros((frame_count,height,width,3),dtype='float')
+
+    video_tensor=np.zeros((frame_count,height,width,3) if RGB else (frame_count, height, width), dtype='float')
     x=0
+
     while cap.isOpened():
         ret,frame=cap.read()
         if ret is True:
-            if custom:
-                video_tensor[x]=frame[:,:,:] #set the first and second range of pixels
-            else:
-                video_tensor[x]=frame
+            video_tensor[x]=frame if RGB else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             x+=1
         else:
             break
     return video_tensor,fps
-def load_video_gray(video_filename, custom = False):
-    cap=cv2.VideoCapture(video_filename)
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = int(cap.get(cv2.CAP_PROP_FPS))
-    if custom:
-        video_tensor=np.zeros((frame_count, 600, 920),dtype='int') #the numbers were chosen manually based
-    # on the box within an image we would like to look at. The reason is that sometimes we do not have
-    # enough memory to load the whole full sequency in the original resolution
-    else:
-        video_tensor=np.zeros((frame_count, height, width),dtype='int')
-    x=0
-    while cap.isOpened():
-        ret,frame=cap.read()
-        if ret is True:
-            if custom:
-                video_tensor[x]=cv2.cvtColor(frame[480:,1000:,:], cv2.COLOR_BGR2GRAY) #1080 - 480 = 620 
-            # and 1920 - 1000 = 920
-            else:
-                video_tensor[x]=cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            x+=1
-        else:
-            break
-    result = np.ndarray(shape=video_tensor.shape, dtype=np.float32)
-    result[:] = video_tensor
-    return result,fps
+
+
 # apply temporal ideal bandpass filter to gaussian video
 def temporal_ideal_filter(tensor,low,high,fps,axis=0):
     fft=fftpack.fft(tensor,axis=axis)
@@ -134,7 +106,7 @@ def save_video(video_tensor, name='out.avi', fps=30, RGB=True):
     fourcc = cv2.VideoWriter_fourcc('M','J','P','G')
     [height,width]=video_tensor[0].shape[0:2]
     num = 0 if RGB is False else 1 
-    writer = cv2.VideoWriter('./video_results/'+name, fourcc, fps, (width, height), num)
+    writer = cv2.VideoWriter(name, fourcc, fps, (width, height), num)
     for i in range(0,video_tensor.shape[0]):
         writer.write(cv2.convertScaleAbs(video_tensor[i]))
     writer.release()
@@ -149,15 +121,17 @@ def magnify_color(video_name,low,high,levels=3,amplification=20):
     save_video(final)
 
 #build laplacian pyramid for video
-def laplacian_video(video_tensor,levels=3):
+def laplacian_video(video_tensor,levels=3, rgb = True):
     tensor_list=[]
     for i in range(0,video_tensor.shape[0]):
         frame=video_tensor[i]
         pyr=build_laplacian_pyramid(frame,levels=levels)
         if i==0:
             for k in range(levels):
-                #tensor_list.append(np.zeros((video_tensor.shape[0],pyr[k].shape[0],pyr[k].shape[1],3)))
-                tensor_list.append(np.zeros((video_tensor.shape[0],pyr[k].shape[0],pyr[k].shape[1])))
+                if rgb:
+                    tensor_list.append(np.zeros((video_tensor.shape[0],pyr[k].shape[0],pyr[k].shape[1],3)))
+                else:
+                    tensor_list.append(np.zeros((video_tensor.shape[0],pyr[k].shape[0],pyr[k].shape[1])))
         for n in range(levels):
             tensor_list[n][i] = pyr[n]
     return tensor_list
@@ -182,13 +156,17 @@ def reconstract_from_tensorlist(filter_tensor_list,levels=3):
     return final
 
 #manify motion
-def magnify_motion(video_name,low,high,filt = 'butter',levels=3,amplification=20, rgb = False, custom = False):
-    if rgb:
-        t,f=load_video(video_name, custom = custom)
-    else:
-        t,f=load_video_gray(video_name, custom = custom) #if custom is True, we have to manually change the parameters 
-        #  of the cropped part of the image within the function
-    lap_video_list=laplacian_video(t,levels=levels)
+def magnify_motion(video_name,low,high,filt = 'butter',levels=3,amplification=20, rgb = False):
+    """
+    low and high specify the corresponding frequencies. 
+    filt specifies which temporal filter to use (choices are 'ideal' and 'butter'). 
+    level specificies the number of levels in the pyramid and 
+    amplification the amount of amplification of the frequency band determined by low and high. 
+    rgb determines wheteher we use RGB images or grayscale.
+    """
+
+    t, f = load_video(video_name, RGB = rgb)
+    lap_video_list=laplacian_video(t,levels=levels, rgb = rgb)
     filter_tensor_list=[]
     for i in range(levels):
         if filt == 'butter':
@@ -201,10 +179,14 @@ def magnify_motion(video_name,low,high,filt = 'butter',levels=3,amplification=20
         filter_tensor_list.append(filter_tensor)
     recon=reconstract_from_tensorlist(filter_tensor_list, levels=levels)
     final=t+recon
-    name = video_name.split('.')[0] + f'{low}-{high}Hz_{levels}Lvl_{amplification}Amp_{filt}Filter.avi'
+
+    #video_name.split('/')[1].split('.')[0] should be customized based on the local path to the source video
+    #or just set the name manually 
+    name = './video_results/'+video_name.split('/')[1].split('.')[0] + f'{low}-{high}Hz_{levels}Levels_{amplification}Amp_{filt}Filter.avi'
     save_video(final, name, fps = f, RGB = rgb)
 
 if __name__=="__main__":
     #magnify_color("baby.mp4",0.4,3)
-    magnify_motion("auto.mov", 10, 20, filt = 'butter', levels=2, amplification=50, rgb = False, custom = True)
-
+    magnify_motion("video_results/auto_original.avi", 30, 42, filt = 'butter', levels=3, amplification=20, rgb = False)
+    #magnify_motion("video/baby.mp4", 0.5, 1.5, filt = 'butter', levels=3, amplification=20, rgb = False)
+    
